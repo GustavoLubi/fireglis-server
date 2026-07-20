@@ -1,6 +1,12 @@
 from fastapi import FastAPI
-from sqlalchemy import Column, Integer, String
-from database import Base, engine, Session
+from database import (
+    Session,
+    User,
+    Server,
+    Channel,
+    Friend,
+    Invite
+)
 
 import bcrypt
 import random
@@ -13,97 +19,39 @@ app = FastAPI(
 
 
 
-class User(Base):
-
-    __tablename__="users"
-
-    id = Column(
-        Integer,
-        primary_key=True
-    )
-
-    username = Column(
-        String,
-        unique=True
-    )
-
-    password = Column(
-        String
-    )
-
-
-
-class Server(Base):
-
-    __tablename__="servers"
-
-    id = Column(
-        Integer,
-        primary_key=True
-    )
-
-    name = Column(
-        String
-    )
-
-    invite = Column(
-        String,
-        unique=True
-    )
-
-    owner = Column(
-        String
-    )
-
-
-
-class Friend(Base):
-
-    __tablename__="friends"
-
-    id = Column(
-        Integer,
-        primary_key=True
-    )
-
-    sender = Column(
-        String
-    )
-
-    receiver = Column(
-        String
-    )
-
-
-Base.metadata.create_all(engine)
-
-
+# --------------------
+# REGISTER
+# --------------------
 
 @app.post("/register")
-def register(username:str,password:str):
+def register(username:str, password:str):
 
     db = Session()
 
 
-    if db.query(User).filter(
-        User.username==username
-    ).first():
+    exists = db.query(User).filter(
+        User.username == username
+    ).first()
 
+
+    if exists:
         return {
             "ok":False,
-            "msg":"Var"
+            "msg":"Kullanıcı zaten var"
         }
 
 
-    pw = bcrypt.hashpw(
+
+    hashed = bcrypt.hashpw(
         password.encode(),
         bcrypt.gensalt()
     ).decode()
 
 
+
     user = User(
         username=username,
-        password=pw
+        password=hashed
     )
 
 
@@ -118,6 +66,9 @@ def register(username:str,password:str):
 
 
 
+# --------------------
+# LOGIN
+# --------------------
 
 @app.post("/login")
 def login(username:str,password:str):
@@ -131,9 +82,11 @@ def login(username:str,password:str):
 
 
     if not user:
+
         return {
             "ok":False
         }
+
 
 
     if bcrypt.checkpw(
@@ -154,9 +107,177 @@ def login(username:str,password:str):
 
 
 
+# --------------------
+# SERVER CREATE
+# --------------------
 
 @app.post("/server/create")
 def create_server(name:str,owner:str):
+
+    db=Session()
+
+
+    server=Server(
+        name=name,
+        owner=owner
+    )
+
+
+    db.add(server)
+    db.commit()
+    db.refresh(server)
+
+
+
+    # otomatik genel kanal
+
+    channel=Channel(
+        server_id=server.id,
+        name="genel"
+    )
+
+
+    db.add(channel)
+    db.commit()
+
+
+
+    return {
+        "ok":True,
+        "server_id":server.id
+    }
+
+
+
+
+
+# --------------------
+# SERVER LIST
+# --------------------
+
+@app.get("/servers/{username}")
+def get_servers(username:str):
+
+    db=Session()
+
+
+    servers=db.query(Server).filter(
+        Server.owner==username
+    ).all()
+
+
+
+    return [
+
+        {
+            "id":x.id,
+            "name":x.name
+        }
+
+        for x in servers
+
+    ]
+
+
+
+
+
+
+# --------------------
+# CHANNEL CREATE
+# --------------------
+
+@app.post("/channel/create")
+def create_channel(server_id:int,name:str):
+
+    db=Session()
+
+
+    c=Channel(
+        server_id=server_id,
+        name=name
+    )
+
+
+    db.add(c)
+    db.commit()
+
+
+    return {
+        "ok":True
+    }
+
+
+
+
+
+# --------------------
+# CHANNEL LIST
+# --------------------
+
+@app.get("/channels/{server_id}")
+def channels(server_id:int):
+
+    db=Session()
+
+
+    data=db.query(Channel).filter(
+        Channel.server_id==server_id
+    ).all()
+
+
+    return [
+
+        {
+            "id":x.id,
+            "name":x.name
+        }
+
+        for x in data
+
+    ]
+
+
+
+
+
+
+# --------------------
+# CHANNEL DELETE
+# --------------------
+
+@app.delete("/channel/delete/{id}")
+def delete_channel(id:int):
+
+    db=Session()
+
+
+    c=db.query(Channel).filter(
+        Channel.id==id
+    ).first()
+
+
+    if c:
+
+        db.delete(c)
+        db.commit()
+
+
+    return {
+        "ok":True
+    }
+
+
+
+
+
+
+# --------------------
+# INVITE CREATE
+# --------------------
+
+@app.post("/invite/create")
+def create_invite(server_id:int):
 
     db=Session()
 
@@ -170,50 +291,64 @@ def create_server(name:str,owner:str):
     )
 
 
-    s=Server(
-        name=name,
-        owner=owner,
-        invite=code
+    inv=Invite(
+        server_id=server_id,
+        code=code
     )
 
 
-    db.add(s)
+    db.add(inv)
     db.commit()
 
 
+
     return {
+
         "ok":True,
+
         "invite":
         "fireglis.gg/"+code
+
     }
 
 
 
 
 
-@app.get("/servers/{username}")
-def servers(username:str):
+
+
+# --------------------
+# INVITE LIST
+# --------------------
+
+@app.get("/invite/{server_id}")
+def invites(server_id:int):
 
     db=Session()
 
 
-    data=db.query(Server).filter(
-        Server.owner==username
+    data=db.query(Invite).filter(
+        Invite.server_id==server_id
     ).all()
 
 
+
     return [
-        {
-            "name":x.name,
-            "invite":x.invite
-        }
+
+        x.code
 
         for x in data
+
     ]
 
 
 
 
+
+
+# --------------------
+# FRIEND REQUEST
+# --------------------
 
 @app.post("/friend/request")
 def friend_request(sender:str,receiver:str):
@@ -234,30 +369,3 @@ def friend_request(sender:str,receiver:str):
     return {
         "ok":True
     }
-
-
-
-@app.get("/friends/{username}")
-def friends(username:str):
-
-    db=Session()
-
-
-    data=db.query(Friend).filter(
-        (Friend.sender==username) |
-        (Friend.receiver==username)
-    ).all()
-
-
-    result=[]
-
-
-    for x in data:
-
-        if x.sender==username:
-            result.append(x.receiver)
-        else:
-            result.append(x.sender)
-
-
-    return result
