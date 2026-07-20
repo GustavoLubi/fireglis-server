@@ -22,8 +22,6 @@ Base = declarative_base()
 
 
 
-# Kullanıcılar
-
 class User(Base):
 
     __tablename__ = "users"
@@ -44,8 +42,6 @@ class User(Base):
 
 
 
-# Sunucular
-
 class Server(Base):
 
     __tablename__ = "servers"
@@ -65,8 +61,6 @@ class Server(Base):
 
 
 
-# Kanallar
-
 class Channel(Base):
 
     __tablename__ = "channels"
@@ -85,8 +79,6 @@ class Channel(Base):
     )
 
 
-
-# Arkadaşlar
 
 class Friend(Base):
 
@@ -112,8 +104,6 @@ class Friend(Base):
 
 
 
-# Davetler
-
 class Invite(Base):
 
     __tablename__ = "invites"
@@ -134,6 +124,23 @@ class Invite(Base):
 
 
 
-Base.metadata.create_all(
-    engine
-)
+class Member(Base):
+
+    __tablename__ = "members"
+
+    id = Column(
+        Integer,
+        primary_key=True
+    )
+
+    server_id = Column(
+        Integer
+    )
+
+    username = Column(
+        String
+    )
+
+
+
+Base.metadata.create_all(engine)
