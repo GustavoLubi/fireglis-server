@@ -5,7 +5,8 @@ from database import (
     Server,
     Channel,
     Friend,
-    Invite
+    Invite,
+    Member
 )
 
 import bcrypt
@@ -19,9 +20,9 @@ app = FastAPI(
 
 
 
-# --------------------
+# -------------------------
 # REGISTER
-# --------------------
+# -------------------------
 
 @app.post("/register")
 def register(username:str, password:str):
@@ -29,15 +30,15 @@ def register(username:str, password:str):
     db = Session()
 
 
-    exists = db.query(User).filter(
+    user = db.query(User).filter(
         User.username == username
     ).first()
 
 
-    if exists:
+    if user:
         return {
             "ok":False,
-            "msg":"Kullanıcı zaten var"
+            "msg":"Kullanıcı mevcut"
         }
 
 
@@ -49,13 +50,13 @@ def register(username:str, password:str):
 
 
 
-    user = User(
+    new = User(
         username=username,
         password=hashed
     )
 
 
-    db.add(user)
+    db.add(new)
     db.commit()
 
 
@@ -66,9 +67,10 @@ def register(username:str, password:str):
 
 
 
-# --------------------
+
+# -------------------------
 # LOGIN
-# --------------------
+# -------------------------
 
 @app.post("/login")
 def login(username:str,password:str):
@@ -79,6 +81,7 @@ def login(username:str,password:str):
     user=db.query(User).filter(
         User.username==username
     ).first()
+
 
 
     if not user:
@@ -100,6 +103,7 @@ def login(username:str,password:str):
         }
 
 
+
     return {
         "ok":False
     }
@@ -107,9 +111,10 @@ def login(username:str,password:str):
 
 
 
-# --------------------
+
+# -------------------------
 # SERVER CREATE
-# --------------------
+# -------------------------
 
 @app.post("/server/create")
 def create_server(name:str,owner:str):
@@ -129,8 +134,6 @@ def create_server(name:str,owner:str):
 
 
 
-    # otomatik genel kanal
-
     channel=Channel(
         server_id=server.id,
         name="genel"
@@ -138,6 +141,17 @@ def create_server(name:str,owner:str):
 
 
     db.add(channel)
+
+
+
+    member=Member(
+        server_id=server.id,
+        username=owner
+    )
+
+
+    db.add(member)
+
     db.commit()
 
 
@@ -151,41 +165,80 @@ def create_server(name:str,owner:str):
 
 
 
-# --------------------
+# -------------------------
 # SERVER LIST
-# --------------------
+# -------------------------
 
 @app.get("/servers/{username}")
-def get_servers(username:str):
+def servers(username:str):
 
     db=Session()
 
 
-    servers=db.query(Server).filter(
-        Server.owner==username
+    data=db.query(Member).filter(
+        Member.username==username
     ).all()
 
 
 
-    return [
+    result=[]
 
+
+    for m in data:
+
+        s=db.query(Server).filter(
+            Server.id==m.server_id
+        ).first()
+
+
+        if s:
+
+            result.append(
+                {
+                    "id":s.id,
+                    "name":s.name
+                }
+            )
+
+
+    return result
+
+
+
+
+
+
+# -------------------------
+# CHANNEL LIST
+# -------------------------
+
+@app.get("/channels/{server_id}")
+def channels(server_id:int):
+
+    db=Session()
+
+
+    data=db.query(Channel).filter(
+        Channel.server_id==server_id
+    ).all()
+
+
+    return [
         {
             "id":x.id,
             "name":x.name
         }
 
-        for x in servers
-
+        for x in data
     ]
 
 
 
 
 
-
-# --------------------
+# -------------------------
 # CHANNEL CREATE
-# --------------------
+# -------------------------
 
 @app.post("/channel/create")
 def create_channel(server_id:int,name:str):
@@ -211,40 +264,9 @@ def create_channel(server_id:int,name:str):
 
 
 
-# --------------------
-# CHANNEL LIST
-# --------------------
-
-@app.get("/channels/{server_id}")
-def channels(server_id:int):
-
-    db=Session()
-
-
-    data=db.query(Channel).filter(
-        Channel.server_id==server_id
-    ).all()
-
-
-    return [
-
-        {
-            "id":x.id,
-            "name":x.name
-        }
-
-        for x in data
-
-    ]
-
-
-
-
-
-
-# --------------------
+# -------------------------
 # CHANNEL DELETE
-# --------------------
+# -------------------------
 
 @app.delete("/channel/delete/{id}")
 def delete_channel(id:int):
@@ -257,10 +279,12 @@ def delete_channel(id:int):
     ).first()
 
 
+
     if c:
 
         db.delete(c)
         db.commit()
+
 
 
     return {
@@ -271,10 +295,9 @@ def delete_channel(id:int):
 
 
 
-
-# --------------------
+# -------------------------
 # INVITE CREATE
-# --------------------
+# -------------------------
 
 @app.post("/invite/create")
 def create_invite(server_id:int):
@@ -287,17 +310,19 @@ def create_invite(server_id:int):
             string.ascii_letters+
             string.digits
         )
+
         for i in range(8)
     )
 
 
-    inv=Invite(
+
+    invite=Invite(
         server_id=server_id,
         code=code
     )
 
 
-    db.add(inv)
+    db.add(invite)
     db.commit()
 
 
@@ -315,45 +340,88 @@ def create_invite(server_id:int):
 
 
 
+# -------------------------
+# JOIN SERVER
+# -------------------------
 
-
-# --------------------
-# INVITE LIST
-# --------------------
-
-@app.get("/invite/{server_id}")
-def invites(server_id:int):
+@app.post("/server/join")
+def join_server(code:str,username:str):
 
     db=Session()
 
 
-    data=db.query(Invite).filter(
-        Invite.server_id==server_id
-    ).all()
+
+    code=code.replace(
+        "fireglis.gg/",
+        ""
+    )
 
 
 
-    return [
-
-        x.code
-
-        for x in data
-
-    ]
+    invite=db.query(Invite).filter(
+        Invite.code==code
+    ).first()
 
 
 
+    if not invite:
+
+        return {
+            "ok":False,
+            "msg":"Davet yok"
+        }
 
 
 
-# --------------------
-# FRIEND REQUEST
-# --------------------
+
+    exists=db.query(Member).filter(
+        Member.server_id==invite.server_id,
+        Member.username==username
+    ).first()
+
+
+
+    if not exists:
+
+        member=Member(
+            server_id=invite.server_id,
+            username=username
+        )
+
+        db.add(member)
+        db.commit()
+
+
+
+    server=db.query(Server).filter(
+        Server.id==invite.server_id
+    ).first()
+
+
+
+    return {
+
+        "ok":True,
+
+        "server_id":server.id,
+
+        "server_name":server.name
+
+    }
+
+
+
+
+
+# -------------------------
+# FRIEND
+# -------------------------
 
 @app.post("/friend/request")
 def friend_request(sender:str,receiver:str):
 
     db=Session()
+
 
 
     f=Friend(
@@ -364,6 +432,7 @@ def friend_request(sender:str,receiver:str):
 
     db.add(f)
     db.commit()
+
 
 
     return {
