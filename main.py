@@ -3,6 +3,11 @@ import database as db
 
 app = FastAPI(title="FireGlis Backend")
 
+@app.on_event("startup")
+def startup_event():
+    # Sunucu her açıldığında veritabanı tablosunun tam oturduğundan emin oluyoruz
+    db.init_db()
+
 @app.post("/register")
 def register(username: str = Query(...), password: str = Query(...)):
     success = db.add_user(username, password)
@@ -17,22 +22,42 @@ def login(username: str = Query(...), password: str = Query(...)):
         raise HTTPException(status_code=401, detail="Hatalı kullanıcı adı veya şifre.")
     return {"ok": True, "username": username}
 
-# CLIENT İLE %100 UYUMLU SUNUCU OLUŞTURMA ENDPOINT'I
 @app.post("/server/create")
-def create_server(
-    name: str = Query(...), 
-    owner: str = Query(...), 
-    color: str = Query("#5865f2")
-):
+def create_server(name: str = Query(...), owner: str = Query(...), color: str = Query("#5865f2")):
     try:
         sid = db.create_server(name, owner, color)
         return {"ok": True, "server_id": sid}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Sunucu veritabanına kaydedilemedi: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
+# TAM KORUMALI SERVER LİSTELEME ENDPOINT'I
 @app.get("/servers/{username}")
 def get_servers(username: str):
-    return db.get_user_servers(username)
+    try:
+        raw_servers = db.get_user_servers(username)
+        cleaned_servers = []
+        
+        # Eğer gelen veri düzgün işlenmediyse bile istemciye kesinlikle 'id' anahtarı gönderiyoruz
+        for s in raw_servers:
+            if isinstance(s, dict):
+                cleaned_servers.append({
+                    "id": s.get("id", "yok"),
+                    "name": s.get("name", "Bilinmeyen Sunucu"),
+                    "owner": s.get("owner", "yok"),
+                    "color": s.get("color", "#5865f2")
+                })
+            else:
+                # Veritabanı eski haliyle tuple döndürdüyse koruma katmanı:
+                cleaned_servers.append({
+                    "id": s[0] if len(s) > 0 else "yok",
+                    "name": s[1] if len(s) > 1 else "Eski Sunucu",
+                    "owner": s[2] if len(s) > 2 else "yok",
+                    "color": s[3] if len(s) > 3 else "#5865f2"
+                })
+        return cleaned_servers
+    except Exception as e:
+        # Sunucu tamamen patlasa bile boş liste dön, istemci (GUI) çökmesin!
+        return []
 
 @app.post("/channel/create")
 def create_channel(server_id: str = Query(...), name: str = Query(...)):
@@ -41,7 +66,10 @@ def create_channel(server_id: str = Query(...), name: str = Query(...)):
 
 @app.get("/channels/{server_id}")
 def get_channels(server_id: str):
-    return db.get_channels(server_id)
+    try:
+        return db.get_channels(server_id)
+    except:
+        return []
 
 @app.delete("/channel/delete/{channel_id}")
 def delete_channel(channel_id: str):
