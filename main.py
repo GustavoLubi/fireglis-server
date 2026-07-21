@@ -4,9 +4,6 @@ import sqlite3
 from fastapi import FastAPI, HTTPException, Query
 import uvicorn
 
-# ----------------------------------------------------------------
-# VERİTABANI KATMANI
-# ----------------------------------------------------------------
 DB_NAME = "fireglis.db"
 
 def init_db():
@@ -17,7 +14,6 @@ def init_db():
     cursor.execute("CREATE TABLE IF NOT EXISTS channels (id TEXT PRIMARY KEY, server_id TEXT, name TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS invites (code TEXT PRIMARY KEY, server_id TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS server_members (server_id TEXT, username TEXT, PRIMARY KEY(server_id, username))")
-    # Mesajlar için yeni tablo
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
@@ -74,12 +70,7 @@ def get_user_servers(username):
     rows = cursor.fetchall()
     servers = []
     for row in rows:
-        servers.append({
-            "id": row[0],
-            "name": row[1],
-            "owner": row[2],
-            "color": row[3] if row[3] else "#5865f2"
-        })
+        servers.append({"id": row[0], "name": row[1], "owner": row[2], "color": row[3] if row[3] else "#5865f2"})
     conn.close()
     return servers
 
@@ -157,9 +148,6 @@ def get_messages(channel_id):
     conn.close()
     return messages
 
-# ----------------------------------------------------------------
-# API KATMANI (FASTAPI)
-# ----------------------------------------------------------------
 app = FastAPI(title="FireGlis Backend")
 
 @app.on_event("startup")
@@ -168,27 +156,22 @@ def startup_event():
 
 @app.post("/register")
 def register_endpoint(username: str = Query(...), password: str = Query(...)):
-    success = add_user(username, password)
-    if not success:
-        raise HTTPException(status_code=400, detail="Bu kullanıcı adı zaten alınmış.")
-    return {"ok": True, "message": "Kayıt başarılı."}
+    if not add_user(username, password):
+        raise HTTPException(status_code=400, detail="Kullanıcı adı alınmış.")
+    return {"ok": True}
 
 @app.post("/login")
 def login_endpoint(username: str = Query(...), password: str = Query(...)):
     user = get_user(username, password)
     if not user:
-        raise HTTPException(status_code=401, detail="Hatalı kullanıcı adı veya şifre.")
+        raise HTTPException(status_code=401, detail="Hatalı giriş.")
     return {"ok": True, "username": username}
 
 @app.post("/server/create")
 def create_server_endpoint(name: str = Query(...), owner: str = Query(...), color: str = Query("#5865f2")):
-    try:
-        sid = create_server(name, owner, color)
-        return {"ok": True, "server_id": sid}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    sid = create_server(name, owner, color)
+    return {"ok": True, "server_id": sid}
 
-# FIX: URL yapısı client ile tam eşleşecek şekilde düzeltildi
 @app.get("/servers/{username}")
 def get_servers_endpoint(username: str):
     return get_user_servers(username)
@@ -198,7 +181,6 @@ def create_channel_endpoint(server_id: str = Query(...), name: str = Query(...))
     cid = create_channel(server_id, name)
     return {"ok": True, "channel_id": cid}
 
-# FIX: URL yapısı client ile tam eşleşecek şekilde düzeltildi
 @app.get("/channels/{server_id}")
 def get_channels_endpoint(server_id: str):
     return get_channels(server_id)
@@ -210,17 +192,15 @@ def delete_channel_endpoint(channel_id: str):
 
 @app.post("/invite/create")
 def create_invite_endpoint(server_id: str = Query(...)):
-    invite_code = create_invite(server_id)
-    return {"ok": True, "invite": invite_code}
+    return {"ok": True, "invite": create_invite(server_id)}
 
 @app.post("/server/join")
 def join_server_endpoint(code: str = Query(...), username: str = Query(...)):
     res = join_server(code, username)
     if not res:
-        raise HTTPException(status_code=404, detail="Geçersiz davet kodu.")
+        raise HTTPException(status_code=404, detail="Geçersiz kod.")
     return {"ok": True, "server_id": res["server_id"], "server_name": res["server_name"]}
 
-# MESAJ ENDPOINTLERİ
 @app.post("/messages/send")
 def send_message_endpoint(channel_id: str = Query(...), username: str = Query(...), content: str = Query(...)):
     add_message(channel_id, username, content)
