@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 import uvicorn
 
 # ----------------------------------------------------------------
-# VERİTABANI KATMANI (DOĞRUDAN main.py İÇİNE GÖMÜLDÜ)
+# VERİTABANI KATMANI
 # ----------------------------------------------------------------
 DB_NAME = "fireglis.db"
 
@@ -17,6 +17,16 @@ def init_db():
     cursor.execute("CREATE TABLE IF NOT EXISTS channels (id TEXT PRIMARY KEY, server_id TEXT, name TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS invites (code TEXT PRIMARY KEY, server_id TEXT)")
     cursor.execute("CREATE TABLE IF NOT EXISTS server_members (server_id TEXT, username TEXT, PRIMARY KEY(server_id, username))")
+    # Mesajlar için yeni tablo
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id TEXT PRIMARY KEY,
+            channel_id TEXT,
+            username TEXT,
+            content TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -128,10 +138,29 @@ def join_server(code, username):
     conn.close()
     return {"server_id": server_id, "server_name": server_name}
 
+def add_message(channel_id, username, content):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    msg_id = str(uuid.uuid4())
+    cursor.execute("INSERT INTO messages (id, channel_id, username, content) VALUES (?, ?, ?, ?)", (msg_id, channel_id, username, content))
+    conn.commit()
+    conn.close()
+
+def get_messages(channel_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT username, content FROM messages WHERE channel_id = ? ORDER BY timestamp ASC", (channel_id,))
+    rows = cursor.fetchall()
+    messages = []
+    for row in rows:
+        messages.append({"username": row[0], "content": row[1]})
+    conn.close()
+    return messages
+
 # ----------------------------------------------------------------
 # API KATMANI (FASTAPI)
 # ----------------------------------------------------------------
-app = FastAPI(title="FireGlis Backend - Monolith")
+app = FastAPI(title="FireGlis Backend")
 
 @app.on_event("startup")
 def startup_event():
@@ -159,24 +188,20 @@ def create_server_endpoint(name: str = Query(...), owner: str = Query(...), colo
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# FIX: URL yapısı client ile tam eşleşecek şekilde düzeltildi
 @app.get("/servers/{username}")
 def get_servers_endpoint(username: str):
-    try:
-        return get_user_servers(username)
-    except:
-        return []
+    return get_user_servers(username)
 
 @app.post("/channel/create")
 def create_channel_endpoint(server_id: str = Query(...), name: str = Query(...)):
     cid = create_channel(server_id, name)
     return {"ok": True, "channel_id": cid}
 
+# FIX: URL yapısı client ile tam eşleşecek şekilde düzeltildi
 @app.get("/channels/{server_id}")
 def get_channels_endpoint(server_id: str):
-    try:
-        return get_channels(server_id)
-    except:
-        return []
+    return get_channels(server_id)
 
 @app.delete("/channel/delete/{channel_id}")
 def delete_channel_endpoint(channel_id: str):
@@ -195,7 +220,16 @@ def join_server_endpoint(code: str = Query(...), username: str = Query(...)):
         raise HTTPException(status_code=404, detail="Geçersiz davet kodu.")
     return {"ok": True, "server_id": res["server_id"], "server_name": res["server_name"]}
 
+# MESAJ ENDPOINTLERİ
+@app.post("/messages/send")
+def send_message_endpoint(channel_id: str = Query(...), username: str = Query(...), content: str = Query(...)):
+    add_message(channel_id, username, content)
+    return {"ok": True}
+
+@app.get("/messages/{channel_id}")
+def get_messages_endpoint(channel_id: str):
+    return get_messages(channel_id)
+
 if __name__ == "__main__":
-    # RAILWAY DINAMIK PORT AYARI
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
