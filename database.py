@@ -144,3 +144,13 @@ class Member(Base):
 
 
 Base.metadata.create_all(engine)
+
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True)
+    channel_id = Column(Integer)
+    username = Column(String)
+    text = Column(String)
